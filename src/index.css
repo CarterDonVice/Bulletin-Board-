@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-page: #1a1208;
+  --color-frame: #3a2412;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'DM Sans', system-ui, sans-serif;
+  color: #2d2118;
+  background: radial-gradient(ellipse at center, #2a1a0d 0%, #120a04 100%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* ============================================================
+   CORK BOARD TEXTURE
+   Multi-layer: base tone + grain noise + speckles + vignette
+   ============================================================ */
+
+.cork-surface {
+  background-color: #b8884a;
+  background-image:
+    /* speckle 1 — dark cork bits */
+    radial-gradient(circle at 13% 22%, rgba(60,32,14,0.55) 0.6px, transparent 1.4px),
+    radial-gradient(circle at 71% 81%, rgba(55,28,10,0.50) 0.7px, transparent 1.6px),
+    radial-gradient(circle at 47% 36%, rgba(80,40,18,0.45) 0.6px, transparent 1.3px),
+    radial-gradient(circle at 88% 12%, rgba(50,25,8,0.45) 0.5px, transparent 1.2px),
+    radial-gradient(circle at 30% 78%, rgba(70,38,16,0.40) 0.5px, transparent 1.2px),
+    /* speckle 2 — light cork bits */
+    radial-gradient(circle at 22% 60%, rgba(245,210,155,0.35) 0.8px, transparent 1.6px),
+    radial-gradient(circle at 64% 30%, rgba(240,200,140,0.30) 0.7px, transparent 1.4px),
+    radial-gradient(circle at 9% 88%, rgba(245,210,155,0.32) 0.6px, transparent 1.3px),
+    radial-gradient(circle at 78% 65%, rgba(240,200,140,0.30) 0.7px, transparent 1.4px),
+    /* grain layer */
+    repeating-radial-gradient(circle at 50% 50%, rgba(50,28,10,0.06) 0 1px, transparent 1px 2px),
+    /* vignette */
+    radial-gradient(ellipse at center, transparent 55%, rgba(40,22,8,0.55) 100%),
+    /* base gradient */
+    linear-gradient(135deg, #c89a5e 0%, #ad7a3e 50%, #8e6028 100%);
+  background-size:
+    140px 140px,
+    180px 180px,
+    160px 160px,
+    200px 200px,
+    170px 170px,
+    150px 150px,
+    190px 190px,
+    160px 160px,
+    175px 175px,
+    3px 3px,
+    100% 100%,
+    100% 100%;
+  background-blend-mode: normal;
+}
+
+/* ============================================================
+   PAPER TEXTURE for notes
+   ============================================================ */
+.paper-texture {
+  background-image:
+    radial-gradient(circle at 30% 20%, rgba(0,0,0,0.025) 1px, transparent 2px),
+    radial-gradient(circle at 70% 80%, rgba(0,0,0,0.020) 1px, transparent 2px),
+    radial-gradient(circle at 20% 70%, rgba(255,255,255,0.10) 0.8px, transparent 1.8px),
+    repeating-linear-gradient(135deg, rgba(0,0,0,0.012) 0 1px, transparent 1px 4px),
+    linear-gradient(180deg, rgba(255,255,255,0.18) 0%, transparent 60%);
+  background-size: 80px 80px, 60px 60px, 50px 50px, 4px 4px, 100% 100%;
+}
+
+/* ============================================================
+   CURLED CORNER for sticky notes (bottom-right)
+   ============================================================ */
+.curl-corner::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 22px;
+  height: 22px;
+  background:
+    linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.18) 52%, rgba(0,0,0,0.08) 70%, transparent 75%),
+    linear-gradient(135deg, transparent 48%, rgba(255,255,255,0.45) 50%, currentColor 56%);
+  clip-path: polygon(100% 0, 100% 100%, 0 100%);
+  pointer-events: none;
+  filter: drop-shadow(-1px -1px 1px rgba(0,0,0,0.10));
+}
+
+/* ============================================================
+   FRAME — wood-like inner border for the board
+   ============================================================ */
+.board-frame {
+  background:
+    linear-gradient(135deg, #4a2e18 0%, #6b4528 30%, #4a2e18 60%, #2e1a0a 100%),
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.08) 0 2px, transparent 2px 14px);
+  background-blend-mode: multiply;
+}
+
+/* ============================================================
+   TIPTAP CONTENT — inherit color, no outline, list styling
+   ============================================================ */
+.tt-content {
+  outline: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+}
+.tt-content p { margin: 0 0 0.3em; }
+.tt-content p:last-child { margin-bottom: 0; }
+.tt-content ul { list-style: disc; padding-left: 1.2em; margin: 0.2em 0; }
+.tt-content ol { list-style: decimal; padding-left: 1.4em; margin: 0.2em 0; }
+.tt-content li { margin-bottom: 0.1em; }
+.tt-content u { text-decoration: underline; text-underline-offset: 2px; }
+.tt-content strong { font-weight: 700; }
+
+/* Tiptap placeholder when empty */
+.tt-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: rgba(45, 33, 24, 0.42);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* ============================================================
+   Focus rings
+   ============================================================ */
+.focus-ring:focus-visible {
+  outline: 2px solid #15803D;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ============================================================
+   No-text-select utility for drag handles
+   ============================================================ */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* ============================================================
+   Scrollbar inside notes — subtle
+   ============================================================ */
+.note-scroll::-webkit-scrollbar { width: 6px; }
+.note-scroll::-webkit-scrollbar-track { background: transparent; }
+.note-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.18);
+  border-radius: 4px;
+}
+.note-scroll::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.32); }
+
+/* ============================================================
+   prefers-reduced-motion
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

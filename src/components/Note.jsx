@@ -1,0 +1,317 @@
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { EditorContent, useEditor } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Underline from '@tiptap/extension-underline';
+import EditorToolbar from './EditorToolbar.jsx';
+import { Pin, Tape } from './Pin.jsx';
+
+const COLOR_HEX = {
+  yellow: '#fff59d',
+  pink: '#ffc1cc',
+  blue: '#bbdefb',
+  green: '#c8e6c9',
+  peach: '#ffd6b3',
+  lavender: '#dcd1ff'
+};
+
+function colorVar(name) {
+  return COLOR_HEX[name] || COLOR_HEX.yellow;
+}
+
+function seedFrom(id) {
+  let s = 0;
+  for (let i = 0; i < id.length; i++) s = (s * 31 + id.charCodeAt(i)) | 0;
+  return s;
+}
+
+const DRAG_THRESHOLD = 4; // px of movement before drag starts
+
+export default function Note({
+  note,
+  boardRef,
+  trashRef,
+  onMove,
+  onChange,
+  onDelete,
+  onFocus,
+  zIndex,
+  isReducedMotion
+}) {
+  const noteRef = useRef(null);
+  const dragState = useRef(null);
+  const [editing, setEditing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [overTrash, setOverTrash] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [justCreated, setJustCreated] = useState(true);
+
+  // Drop the pop-in flag after first paint cycle so subsequent renders don't re-trigger it
+  useEffect(() => {
+    const t = setTimeout(() => setJustCreated(false), 320);
+    return () => clearTimeout(t);
+  }, []);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({
+        heading: false,
+        codeBlock: false,
+        blockquote: false,
+        horizontalRule: false
+      }),
+      Underline
+    ],
+    content: note.content || '<p></p>',
+    editorProps: {
+      attributes: {
+        class: 'tt-content focus:outline-none w-full h-full',
+        'data-placeholder': 'Tap to write…'
+      }
+    },
+    onUpdate: ({ editor: ed }) => {
+      onChange?.({ content: ed.getHTML() });
+    }
+  });
+
+  // If the note's content changes externally (e.g. remote sync), update editor.
+  useEffect(() => {
+    if (!editor) return;
+    const current = editor.getHTML();
+    if ((note.content || '<p></p>') !== current) {
+      editor.commands.setContent(note.content || '<p></p>', false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.content, editor]);
+
+  // ----- Drag handling (pointer events for mouse + touch + pen) -----
+  const onPointerDown = (e) => {
+    if (editing) return; // don't drag while editing
+    if (e.button !== undefined && e.button !== 0) return;
+    // ignore drags starting on interactive children (X button etc.)
+    if (e.target.closest('[data-no-drag]')) return;
+
+    const noteEl = noteRef.current;
+    if (!noteEl) return;
+    const boardEl = boardRef.current;
+    const boardRect = boardEl.getBoundingClientRect();
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      offsetX: e.clientX - (boardRect.left + note.x),
+      offsetY: e.clientY - (boardRect.top + note.y),
+      pointerId: e.pointerId,
+      moved: false
+    };
+    onFocus?.();
+    try { noteEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+  };
+
+  const onPointerMove = (e) => {
+    const ds = dragState.current;
+    if (!ds) return;
+    const dx = e.clientX - ds.startX;
+    const dy = e.clientY - ds.startY;
+    if (!ds.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+    if (!ds.moved) {
+      ds.moved = true;
+      setDragging(true);
+    }
+    const boardEl = boardRef.current;
+    if (!boardEl) return;
+    const boardRect = boardEl.getBoundingClientRect();
+    const nx = e.clientX - boardRect.left - ds.offsetX;
+    const ny = e.clientY - boardRect.top - ds.offsetY;
+    // clamp inside board (keep at least 40px of note visible)
+    const min = 4;
+    const maxX = boardRect.width - 60;
+    const maxY = boardRect.height - 60;
+    const x = Math.max(min, Math.min(maxX, nx));
+    const y = Math.max(min, Math.min(maxY, ny));
+    onMove?.({ x, y });
+
+    // trash hit-test
+    const trashEl = trashRef?.current;
+    if (trashEl) {
+      const tr = trashEl.getBoundingClientRect();
+      const within =
+        e.clientX >= tr.left && e.clientX <= tr.right &&
+        e.clientY >= tr.top && e.clientY <= tr.bottom;
+      setOverTrash(within);
+    }
+  };
+
+  const onPointerUp = (e) => {
+    const ds = dragState.current;
+    dragState.current = null;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerUp);
+    setDragging(false);
+
+    if (!ds) return;
+    try { noteRef.current?.releasePointerCapture?.(ds.pointerId); } catch { /* ignore */ }
+
+    if (overTrash) {
+      setOverTrash(false);
+      triggerDelete();
+      return;
+    }
+    setOverTrash(false);
+
+    // if not moved, treat as a click → enter editing mode
+    if (!ds.moved) {
+      setEditing(true);
+      // focus editor on next tick to ensure it's mounted
+      requestAnimationFrame(() => editor?.commands.focus('end'));
+    }
+  };
+
+  // ----- Click-outside to exit editing -----
+  useEffect(() => {
+    if (!editing) return;
+    const onDocPointerDown = (e) => {
+      const noteEl = noteRef.current;
+      if (!noteEl) return;
+      if (noteEl.contains(e.target)) return;
+      // also ignore clicks on the toolbar which lives outside the note
+      const toolbar = document.querySelector('[role="toolbar"][aria-label="Note formatting"]');
+      if (toolbar && toolbar.contains(e.target)) return;
+      setEditing(false);
+      editor?.commands.blur();
+    };
+    document.addEventListener('pointerdown', onDocPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onDocPointerDown, true);
+  }, [editing, editor]);
+
+  // ESC exits editing
+  useEffect(() => {
+    if (!editing) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setEditing(false);
+        editor?.commands.blur();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [editing, editor]);
+
+  const triggerDelete = () => {
+    if (isReducedMotion) {
+      onDelete?.();
+      return;
+    }
+    setRemoving(true);
+    // wait for animation to finish, then unmount
+    setTimeout(() => onDelete?.(), 520);
+  };
+
+  const seed = seedFrom(note.id);
+  const bg = colorVar(note.color);
+
+  const animClass = removing
+    ? 'animate-crumple-toss'
+    : justCreated && !isReducedMotion
+      ? 'animate-note-pop'
+      : '';
+
+  const transitionStyle = dragging || removing
+    ? 'none'
+    : 'transform 220ms cubic-bezier(.2,1.1,.4,1), box-shadow 220ms ease, scale 220ms ease';
+
+  return (
+    <div
+      ref={noteRef}
+      data-note-id={note.id}
+      onPointerDown={onPointerDown}
+      onDoubleClick={(e) => {
+        // prevent board double-click handler from also firing
+        e.stopPropagation();
+      }}
+      role="group"
+      aria-label="Sticky note"
+      tabIndex={-1}
+      className={[
+        'absolute select-none rounded-[3px] curl-corner paper-texture',
+        'touch-none', // disable browser touch scrolling/zoom on drag
+        'will-change-transform',
+        animClass,
+        editing ? 'cursor-text' : dragging ? 'cursor-grabbing' : 'cursor-grab'
+      ].join(' ')}
+      style={{
+        left: 0,
+        top: 0,
+        width: note.w || 200,
+        height: note.h || 200,
+        color: bg,
+        backgroundColor: bg,
+        transform: `translate3d(${note.x}px, ${note.y}px, 0) rotate(${note.rotation}deg) ${dragging ? 'scale(1.04)' : ''}`,
+        transition: transitionStyle,
+        zIndex: zIndex || 1,
+        boxShadow: removing
+          ? '0 1px 2px rgba(0,0,0,0.1)'
+          : dragging
+            ? 'var(--tw-shadow), 0 4px 4px rgba(0,0,0,0.15), 0 14px 22px rgba(0,0,0,0.28), 0 30px 50px -10px rgba(0,0,0,0.42)'
+            : '0 1px 1px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.18), 0 8px 14px -6px rgba(0,0,0,0.30)',
+        ['--rot']: `${note.rotation}deg`
+      }}
+    >
+      {/* Pin or tape (decorative, sits above note at top edge) */}
+      <div
+        aria-hidden="true"
+        className="absolute pointer-events-none"
+        style={{
+          top: note.pin === 'tape' ? -8 : -10,
+          left: note.pin === 'tape'
+            ? `calc(50% + ${note.pinOffset}px - 28px)`
+            : `calc(50% + ${note.pinOffset}px - 11px)`,
+          zIndex: 2
+        }}
+      >
+        {note.pin === 'tape' ? <Tape seed={seed} /> : <Pin seed={seed} />}
+      </div>
+
+      {/* Delete X */}
+      <button
+        type="button"
+        data-no-drag
+        aria-label="Delete note"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => { e.stopPropagation(); triggerDelete(); }}
+        className="absolute top-1 right-1 z-10 w-7 h-7 inline-flex items-center justify-center rounded-full bg-black/0 hover:bg-black/10 active:bg-black/20 transition-colors text-ink/70 hover:text-ink focus-ring opacity-70 hover:opacity-100"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+          <path d="M3 3 L11 11 M11 3 L3 11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </button>
+
+      {/* Body — editor */}
+      <div
+        className="absolute inset-0 px-3 pt-5 pb-3"
+        onPointerDown={(e) => {
+          // when editing, let pointer events go to editor (don't start drag)
+          if (editing) e.stopPropagation();
+        }}
+      >
+        <div
+          className="w-full h-full text-[14px] leading-snug text-ink note-scroll overflow-y-auto"
+          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+        >
+          <EditorContent editor={editor} />
+        </div>
+      </div>
+
+      {editing && <EditorToolbar editor={editor} />}
+
+      {overTrash && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 rounded-[3px] pointer-events-none ring-4 ring-red-500/70 animate-pulse-soft"
+        />
+      )}
+    </div>
+  );
+}
