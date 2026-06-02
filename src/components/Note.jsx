@@ -34,6 +34,9 @@ export default function Note({
   onChange,
   onDelete,
   onFocus,
+  onConnectionStart,
+  zoom = 1,
+  pan = { x: 0, y: 0 },
   zIndex,
   isReducedMotion
 }) {
@@ -83,22 +86,32 @@ export default function Note({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note.content, editor]);
 
+  // Convert a screen-space pointer into world-space coords (accounts for pan + zoom).
+  const screenToWorld = (clientX, clientY) => {
+    const boardEl = boardRef.current;
+    if (!boardEl) return { x: clientX, y: clientY };
+    const r = boardEl.getBoundingClientRect();
+    return {
+      x: (clientX - r.left - pan.x) / zoom,
+      y: (clientY - r.top  - pan.y) / zoom
+    };
+  };
+
   // ----- Drag handling (pointer events for mouse + touch + pen) -----
   const onPointerDown = (e) => {
     if (editing) return; // don't drag while editing
     if (e.button !== undefined && e.button !== 0) return;
-    // ignore drags starting on interactive children (X button etc.)
+    // ignore drags starting on interactive children (X button, connection points)
     if (e.target.closest('[data-no-drag]')) return;
 
     const noteEl = noteRef.current;
     if (!noteEl) return;
-    const boardEl = boardRef.current;
-    const boardRect = boardEl.getBoundingClientRect();
+    const world = screenToWorld(e.clientX, e.clientY);
     dragState.current = {
       startX: e.clientX,
       startY: e.clientY,
-      offsetX: e.clientX - (boardRect.left + note.x),
-      offsetY: e.clientY - (boardRect.top + note.y),
+      offsetX: world.x - note.x,
+      offsetY: world.y - note.y,
       pointerId: e.pointerId,
       moved: false
     };
@@ -119,20 +132,17 @@ export default function Note({
       ds.moved = true;
       setDragging(true);
     }
-    const boardEl = boardRef.current;
-    if (!boardEl) return;
-    const boardRect = boardEl.getBoundingClientRect();
-    const nx = e.clientX - boardRect.left - ds.offsetX;
-    const ny = e.clientY - boardRect.top - ds.offsetY;
-    // clamp inside board (keep at least 40px of note visible)
-    const min = 4;
-    const maxX = boardRect.width - 60;
-    const maxY = boardRect.height - 60;
-    const x = Math.max(min, Math.min(maxX, nx));
-    const y = Math.max(min, Math.min(maxY, ny));
+    const world = screenToWorld(e.clientX, e.clientY);
+    const nx = world.x - ds.offsetX;
+    const ny = world.y - ds.offsetY;
+    // Clamp loosely so notes don't fly off into infinity, but allow extending the canvas.
+    const MIN = -2000;
+    const MAX = 4000;
+    const x = Math.max(MIN, Math.min(MAX, nx));
+    const y = Math.max(MIN, Math.min(MAX, ny));
     onMove?.({ x, y });
 
-    // trash hit-test
+    // trash hit-test (uses screen coords — trash is outside the world)
     const trashEl = trashRef?.current;
     if (trashEl) {
       const tr = trashEl.getBoundingClientRect();
@@ -312,6 +322,42 @@ export default function Note({
           className="absolute inset-0 rounded-[3px] pointer-events-none ring-4 ring-red-500/70 animate-pulse-soft"
         />
       )}
+
+      {/* Connection anchor points (top / right / bottom / left). Positioned half-outside the
+          note's edges so they don't conflict with the note's draggable body. */}
+      {!removing && !editing && onConnectionStart && (
+        <>
+          <ConnectionPoint side="top"    note={note} onConnectionStart={onConnectionStart} />
+          <ConnectionPoint side="right"  note={note} onConnectionStart={onConnectionStart} />
+          <ConnectionPoint side="bottom" note={note} onConnectionStart={onConnectionStart} />
+          <ConnectionPoint side="left"   note={note} onConnectionStart={onConnectionStart} />
+        </>
+      )}
     </div>
+  );
+}
+
+function ConnectionPoint({ side, note, onConnectionStart }) {
+  const pos = {
+    top:    { top: -9, left: 'calc(50% - 9px)' },
+    right:  { right: -9, top: 'calc(50% - 9px)' },
+    bottom: { bottom: -9, left: 'calc(50% - 9px)' },
+    left:   { left: -9, top: 'calc(50% - 9px)' }
+  }[side];
+  return (
+    <button
+      type="button"
+      data-no-drag
+      data-connection-point
+      aria-label={`Start a connection from ${side}`}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        if (e.button !== undefined && e.button !== 0) return;
+        onConnectionStart?.(note.id, side, e);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className="absolute w-[18px] h-[18px] rounded-full bg-emerald-700 ring-2 ring-white shadow-md opacity-50 hover:opacity-100 hover:scale-110 focus:opacity-100 transition-all duration-150 focus-ring"
+      style={{ ...pos, touchAction: 'none', zIndex: 6 }}
+    />
   );
 }

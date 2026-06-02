@@ -19,6 +19,8 @@ export default function App() {
     addNote,
     updateNote,
     deleteNote,
+    addConnection,
+    deleteConnection,
     replaceState
   } = useBoards();
 
@@ -107,6 +109,8 @@ export default function App() {
                 onAddNote={(opts) => addNote(activeBoardId, opts)}
                 onUpdateNote={(id, patch) => updateNote(activeBoardId, id, patch)}
                 onDeleteNote={(id) => deleteNote(activeBoardId, id)}
+                onAddConnection={(fromId, toId) => addConnection(activeBoardId, fromId, toId)}
+                onDeleteConnection={(connId) => deleteConnection(activeBoardId, connId)}
                 isReducedMotion={reducedMotion}
               />
             </div>

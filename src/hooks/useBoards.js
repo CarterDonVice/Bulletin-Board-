@@ -26,7 +26,7 @@ function pickPin() {
 }
 
 function makeBoard(name = 'Untitled board') {
-  return { id: newId(), name, notes: [] };
+  return { id: newId(), name, notes: [], connections: [] };
 }
 
 function makeNote({ x = 60, y = 60 } = {}) {
@@ -42,6 +42,15 @@ function makeNote({ x = 60, y = 60 } = {}) {
     pinOffset: Math.round(Math.random() * 40 - 20),
     content: '',
     createdAt: new Date().toISOString()
+  };
+}
+
+function normalizeBoard(b) {
+  return {
+    id: b.id,
+    name: b.name,
+    notes: Array.isArray(b.notes) ? b.notes : [],
+    connections: Array.isArray(b.connections) ? b.connections : []
   };
 }
 
@@ -146,9 +155,13 @@ export function useBoards() {
       const remoteTime = Date.parse(remote.updatedAt || 0);
       const localTime = Date.parse(local.updatedAt || 0);
       if (Number.isFinite(remoteTime) && remoteTime > localTime) {
-        setStateRaw(remote);
-        saveLocal(remote);
-        return remote;
+        const normalized = {
+          ...remote,
+          boards: Array.isArray(remote.boards) ? remote.boards.map(normalizeBoard) : []
+        };
+        setStateRaw(normalized);
+        saveLocal(normalized);
+        return normalized;
       }
       return null;
     } catch (err) {
@@ -282,7 +295,47 @@ export function useBoards() {
     setState((prev) => ({
       ...prev,
       boards: prev.boards.map((b) =>
-        b.id !== boardId ? b : { ...b, notes: b.notes.filter((n) => n.id !== noteId) }
+        b.id !== boardId
+          ? b
+          : {
+              ...b,
+              notes: b.notes.filter((n) => n.id !== noteId),
+              connections: (b.connections || []).filter(
+                (c) => c.from !== noteId && c.to !== noteId
+              )
+            }
+      )
+    }));
+  }, [setState]);
+
+  const addConnection = useCallback((boardId, fromNoteId, toNoteId) => {
+    if (!boardId || !fromNoteId || !toNoteId || fromNoteId === toNoteId) return null;
+    let createdId = null;
+    setState((prev) => ({
+      ...prev,
+      boards: prev.boards.map((b) => {
+        if (b.id !== boardId) return b;
+        const existing = (b.connections || []).find(
+          (c) =>
+            (c.from === fromNoteId && c.to === toNoteId) ||
+            (c.from === toNoteId && c.to === fromNoteId)
+        );
+        if (existing) return b;
+        const conn = { id: newId(), from: fromNoteId, to: toNoteId };
+        createdId = conn.id;
+        return { ...b, connections: [...(b.connections || []), conn] };
+      })
+    }));
+    return createdId;
+  }, [setState]);
+
+  const deleteConnection = useCallback((boardId, connectionId) => {
+    setState((prev) => ({
+      ...prev,
+      boards: prev.boards.map((b) =>
+        b.id !== boardId
+          ? b
+          : { ...b, connections: (b.connections || []).filter((c) => c.id !== connectionId) }
       )
     }));
   }, [setState]);
@@ -292,7 +345,7 @@ export function useBoards() {
     const normalized = {
       version: DATA_VERSION,
       updatedAt: new Date().toISOString(),
-      boards: incoming.boards
+      boards: incoming.boards.map(normalizeBoard)
     };
     setState(() => normalized);
   }, [setState]);
@@ -313,6 +366,8 @@ export function useBoards() {
     addNote,
     updateNote,
     deleteNote,
+    addConnection,
+    deleteConnection,
     replaceState,
     flushSync
   };
