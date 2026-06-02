@@ -14,6 +14,19 @@ const COLOR_HEX = {
   lavender: '#dcd1ff'
 };
 
+const FONT_SIZES = [13, 15, 18, 22, 28];
+const DEFAULT_FONT_SIZE = 18;
+
+function nextSmaller(size) {
+  let candidate = null;
+  for (const s of FONT_SIZES) if (s < size && (candidate === null || s > candidate)) candidate = s;
+  return candidate;
+}
+function nextLarger(size) {
+  for (const s of FONT_SIZES) if (s > size) return s;
+  return null;
+}
+
 function colorVar(name) {
   return COLOR_HEX[name] || COLOR_HEX.yellow;
 }
@@ -307,14 +320,33 @@ export default function Note({
         }}
       >
         <div
-          className="w-full h-full text-[14px] leading-snug text-ink note-scroll overflow-y-auto"
-          style={{ overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+          className="w-full h-full leading-snug text-ink note-scroll overflow-y-auto"
+          style={{
+            fontSize: `${note.fontSize || DEFAULT_FONT_SIZE}px`,
+            overflowWrap: 'anywhere',
+            wordBreak: 'break-word'
+          }}
         >
           <EditorContent editor={editor} />
         </div>
       </div>
 
-      {editing && <EditorToolbar editor={editor} />}
+      {editing && (
+        <EditorToolbar
+          editor={editor}
+          fontSize={note.fontSize || DEFAULT_FONT_SIZE}
+          canDecreaseFontSize={nextSmaller(note.fontSize || DEFAULT_FONT_SIZE) !== null}
+          canIncreaseFontSize={nextLarger(note.fontSize || DEFAULT_FONT_SIZE) !== null}
+          onDecreaseFontSize={() => {
+            const next = nextSmaller(note.fontSize || DEFAULT_FONT_SIZE);
+            if (next !== null) onChange?.({ fontSize: next });
+          }}
+          onIncreaseFontSize={() => {
+            const next = nextLarger(note.fontSize || DEFAULT_FONT_SIZE);
+            if (next !== null) onChange?.({ fontSize: next });
+          }}
+        />
+      )}
 
       {overTrash && (
         <div

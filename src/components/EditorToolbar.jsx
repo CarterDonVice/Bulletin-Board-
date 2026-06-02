@@ -1,23 +1,27 @@
 import React from 'react';
 
-function Btn({ active, onPointerDown, children, label }) {
+function Btn({ active, disabled, onPointerDown, children, label }) {
   return (
     <button
       type="button"
       aria-label={label}
       aria-pressed={!!active}
+      disabled={disabled}
       onPointerDown={(e) => {
         // prevent editor blur
         e.preventDefault();
+        if (disabled) return;
         onPointerDown?.(e);
       }}
       className={[
         'min-h-[36px] min-w-[36px] inline-flex items-center justify-center rounded-md',
         'text-[15px] font-semibold transition-colors duration-150',
         'focus-ring',
-        active
-          ? 'bg-ink text-white'
-          : 'bg-white/85 text-ink hover:bg-white'
+        disabled
+          ? 'bg-white/40 text-ink/40 cursor-not-allowed'
+          : active
+            ? 'bg-ink text-white'
+            : 'bg-white/85 text-ink hover:bg-white'
       ].join(' ')}
     >
       {children}
@@ -25,7 +29,14 @@ function Btn({ active, onPointerDown, children, label }) {
   );
 }
 
-export default function EditorToolbar({ editor }) {
+export default function EditorToolbar({
+  editor,
+  fontSize,
+  onDecreaseFontSize,
+  onIncreaseFontSize,
+  canDecreaseFontSize,
+  canIncreaseFontSize
+}) {
   if (!editor) return null;
   return (
     <div
@@ -78,6 +89,34 @@ export default function EditorToolbar({ editor }) {
           <rect x="6" y="11.3" width="8" height="1.4" rx="0.5" />
         </svg>
       </Btn>
+      <span aria-hidden className="mx-0.5 w-px h-5 bg-white/20" />
+      <Btn
+        label="Decrease font size"
+        disabled={!canDecreaseFontSize}
+        onPointerDown={() => onDecreaseFontSize?.()}
+      >
+        <span className="inline-flex items-baseline gap-[1px]">
+          <span className="text-[11px] font-bold">A</span>
+          <span className="text-[11px] font-bold">−</span>
+        </span>
+      </Btn>
+      <span
+        aria-label={`Font size ${fontSize ?? ''}`}
+        className="min-w-[28px] text-center text-white/90 text-xs font-semibold tabular-nums select-none"
+      >
+        {fontSize}
+      </span>
+      <Btn
+        label="Increase font size"
+        disabled={!canIncreaseFontSize}
+        onPointerDown={() => onIncreaseFontSize?.()}
+      >
+        <span className="inline-flex items-baseline gap-[1px]">
+          <span className="text-[16px] font-bold leading-none">A</span>
+          <span className="text-[10px] font-bold">+</span>
+        </span>
+      </Btn>
     </div>
   );
 }
+
