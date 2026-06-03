@@ -113,13 +113,20 @@ export default function Note({
   };
 
   // ----- Drag handling (pointer events for mouse + touch + pen) -----
-  const onPointerDown = (e) => {
-    if (editing) return; // don't drag while editing
+  const beginDrag = (e, opts = {}) => {
     if (e.button !== undefined && e.button !== 0) return;
-    // ignore drags starting on interactive children (X button, connection points)
-    if (e.target.closest('[data-no-drag]')) return;
     // a multi-touch gesture takes over — don't start a note drag
     if (pinchTaintedRef?.current) return;
+
+    // From the note body: don't start a drag if editing, or if clicking on an interactive child.
+    // From the dedicated drag handle: always works, even when editing (exits editing first).
+    if (!opts.fromHandle) {
+      if (editing) return;
+      if (e.target.closest('[data-no-drag]')) return;
+    } else if (editing) {
+      setEditing(false);
+      editor?.commands.blur();
+    }
 
     const noteEl = noteRef.current;
     if (!noteEl) return;
@@ -130,13 +137,20 @@ export default function Note({
       offsetX: world.x - note.x,
       offsetY: world.y - note.y,
       pointerId: e.pointerId,
-      moved: false
+      moved: false,
+      fromHandle: !!opts.fromHandle
     };
     onFocus?.();
     try { noteEl.setPointerCapture(e.pointerId); } catch { /* ignore */ }
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
+  };
+
+  const onPointerDown = (e) => beginDrag(e, { fromHandle: false });
+  const onHandlePointerDown = (e) => {
+    e.stopPropagation();
+    beginDrag(e, { fromHandle: true });
   };
 
   const onPointerMove = (e) => {
@@ -191,8 +205,8 @@ export default function Note({
     }
     setOverTrash(false);
 
-    // if not moved, treat as a click → enter editing mode
-    if (!ds.moved) {
+    // if not moved AND not from the drag handle, treat as a click → enter editing mode
+    if (!ds.moved && !ds.fromHandle) {
       setEditing(true);
       // focus editor on next tick to ensure it's mounted
       requestAnimationFrame(() => editor?.commands.focus('end'));
@@ -362,8 +376,34 @@ export default function Note({
         />
       )}
 
+      {/* All-directional drag handle (bottom-left). Works even while editing — gives
+          mobile users a thumb-sized grab area so they can drag without entering edit mode. */}
+      {!removing && (
+        <button
+          type="button"
+          data-no-drag
+          data-drag-handle
+          aria-label="Drag note"
+          title="Drag to move"
+          onPointerDown={onHandlePointerDown}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-1.5 left-1.5 z-[5] w-9 h-9 rounded-md inline-flex items-center justify-center bg-ink/15 text-ink/70 hover:bg-ink/30 hover:text-ink active:bg-ink/45 opacity-70 hover:opacity-100 focus:opacity-100 transition-all duration-150 focus-ring cursor-grab active:cursor-grabbing"
+          style={{ touchAction: 'none' }}
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <line x1="9" y1="2.5" x2="9" y2="15.5" />
+            <line x1="2.5" y1="9" x2="15.5" y2="9" />
+            <polyline points="6 4.5 9 1.8 12 4.5" />
+            <polyline points="6 13.5 9 16.2 12 13.5" />
+            <polyline points="4.5 6 1.8 9 4.5 12" />
+            <polyline points="13.5 6 16.2 9 13.5 12" />
+          </svg>
+        </button>
+      )}
+
       {/* Connection anchor points (top / right / bottom / left). Positioned half-outside the
-          note's edges so they don't conflict with the note's draggable body. */}
+          note's edges so they don't conflict with the note's draggable body. Drag from any
+          dot to another note to create a Figma-style arrow. */}
       {!removing && !editing && onConnectionStart && (
         <>
           <ConnectionPoint side="top"    note={note} onConnectionStart={onConnectionStart} />
@@ -378,25 +418,30 @@ export default function Note({
 
 function ConnectionPoint({ side, note, onConnectionStart }) {
   const pos = {
-    top:    { top: -9, left: 'calc(50% - 9px)' },
-    right:  { right: -9, top: 'calc(50% - 9px)' },
-    bottom: { bottom: -9, left: 'calc(50% - 9px)' },
-    left:   { left: -9, top: 'calc(50% - 9px)' }
+    top:    { top: -11, left: 'calc(50% - 11px)' },
+    right:  { right: -11, top: 'calc(50% - 11px)' },
+    bottom: { bottom: -11, left: 'calc(50% - 11px)' },
+    left:   { left: -11, top: 'calc(50% - 11px)' }
   }[side];
   return (
     <button
       type="button"
       data-no-drag
       data-connection-point
-      aria-label={`Start a connection from ${side}`}
+      aria-label={`Drag to link this note to another (from ${side})`}
+      title="Drag to another note to connect"
       onPointerDown={(e) => {
         e.stopPropagation();
         if (e.button !== undefined && e.button !== 0) return;
         onConnectionStart?.(note.id, side, e);
       }}
       onClick={(e) => e.stopPropagation()}
-      className="absolute w-[18px] h-[18px] rounded-full bg-emerald-700 ring-2 ring-white shadow-md opacity-50 hover:opacity-100 hover:scale-110 focus:opacity-100 transition-all duration-150 focus-ring"
+      className="absolute w-[22px] h-[22px] rounded-full bg-emerald-600 ring-[3px] ring-white shadow-lg opacity-90 hover:opacity-100 hover:scale-[1.15] focus:opacity-100 transition-all duration-150 focus-ring cursor-crosshair"
       style={{ ...pos, touchAction: 'none', zIndex: 6 }}
-    />
+    >
+      <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 mx-auto text-white" aria-hidden="true">
+        <circle cx="5" cy="5" r="2.2" fill="currentColor" />
+      </svg>
+    </button>
   );
 }

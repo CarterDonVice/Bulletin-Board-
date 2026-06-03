@@ -410,8 +410,33 @@ export default function CorkBoard({
           className="absolute inset-0 cork-surface overflow-hidden touch-none"
           onDoubleClick={onCorkDoubleClick}
           onPointerDown={onCorkPointerDown}
-          style={{ cursor: panning ? 'grabbing' : draft ? 'crosshair' : 'default' }}
+          style={{ cursor: panning ? 'grabbing' : draft ? 'crosshair' : 'grab' }}
         >
+          {/* Parallax dot grid — sits inside the world so it pans + zooms together with
+              notes / arrows. Gives clear visual feedback that the board is moving when
+              you drag, even on a totally empty board. */}
+          <div
+            aria-hidden="true"
+            className="absolute pointer-events-none"
+            style={{
+              ...worldStyle,
+              willChange: 'transform'
+            }}
+          >
+            <div
+              className="absolute"
+              style={{
+                left: -5000,
+                top: -5000,
+                width: 10000,
+                height: 10000,
+                backgroundImage:
+                  'radial-gradient(circle, rgba(35, 22, 10, 0.22) 1.1px, transparent 1.7px)',
+                backgroundSize: '40px 40px'
+              }}
+            />
+          </div>
+
           {/* World — everything that should zoom + pan lives here */}
           <div
             className="absolute"
