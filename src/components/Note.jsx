@@ -50,6 +50,8 @@ export default function Note({
   onConnectionStart,
   zoom = 1,
   pan = { x: 0, y: 0 },
+  pinchTaintedRef,
+  isPinchingRef,
   zIndex,
   isReducedMotion
 }) {
@@ -116,6 +118,8 @@ export default function Note({
     if (e.button !== undefined && e.button !== 0) return;
     // ignore drags starting on interactive children (X button, connection points)
     if (e.target.closest('[data-no-drag]')) return;
+    // a multi-touch gesture takes over — don't start a note drag
+    if (pinchTaintedRef?.current) return;
 
     const noteEl = noteRef.current;
     if (!noteEl) return;
@@ -138,6 +142,9 @@ export default function Note({
   const onPointerMove = (e) => {
     const ds = dragState.current;
     if (!ds) return;
+    // Freeze movement while a multi-touch gesture is active OR while the post-pinch
+    // cooldown is still in effect (waiting for all fingers to lift).
+    if (isPinchingRef?.current || pinchTaintedRef?.current) return;
     const dx = e.clientX - ds.startX;
     const dy = e.clientY - ds.startY;
     if (!ds.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;

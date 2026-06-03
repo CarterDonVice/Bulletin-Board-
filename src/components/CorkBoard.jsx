@@ -39,6 +39,16 @@ export default function CorkBoard({
   const draftRef = useRef(null);
   draftRef.current = draft;
 
+  // Multi-touch pinch / pan. We track every active touch pointer on the board (regardless
+  // of which child element it landed on) so we can detect a 2-finger gesture even if it
+  // started on a note. While the gesture is active, single-touch handlers (note drag /
+  // cork pan / connection drag) freeze. After it ends, they stay frozen until all touch
+  // fingers lift, so the remaining finger doesn't suddenly take over the world.
+  const touchesRef = useRef(new Map()); // pointerId -> {x, y}
+  const pinchRef = useRef(null);
+  const isPinchingRef = useRef(false);
+  const pinchTaintedRef = useRef(false);
+
   const screenToWorld = useCallback((clientX, clientY) => {
     const el = boardRef.current;
     if (!el) return { x: 0, y: 0 };
@@ -82,10 +92,88 @@ export default function CorkBoard({
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  // ---------- Multi-touch pinch + pan ----------
+  useEffect(() => {
+    const el = boardRef.current;
+    if (!el) return;
+
+    const recomputePinch = () => {
+      const touches = [...touchesRef.current.values()];
+      if (touches.length < 2) {
+        if (isPinchingRef.current) isPinchingRef.current = false;
+        if (touches.length === 0) pinchTaintedRef.current = false;
+        pinchRef.current = null;
+        return;
+      }
+      const a = touches[0];
+      const b = touches[1];
+      const rect = el.getBoundingClientRect();
+      const dist = Math.hypot(b.x - a.x, b.y - a.y);
+      const mid = {
+        x: (a.x + b.x) / 2 - rect.left,
+        y: (a.y + b.y) / 2 - rect.top
+      };
+      if (!pinchRef.current) {
+        pinchRef.current = {
+          startDist: dist || 1,
+          startMid: mid,
+          startZoom: zoomRef.current,
+          startPan: { ...panRef.current }
+        };
+        isPinchingRef.current = true;
+        pinchTaintedRef.current = true;
+        return;
+      }
+      const p = pinchRef.current;
+      const scale = dist / p.startDist;
+      const newZoom = clamp(p.startZoom * scale, ZOOM_MIN, ZOOM_MAX);
+      // Anchor: world point under the initial midpoint stays under the current midpoint
+      const worldX = (p.startMid.x - p.startPan.x) / p.startZoom;
+      const worldY = (p.startMid.y - p.startPan.y) / p.startZoom;
+      setZoom(newZoom);
+      setPan({
+        x: mid.x - worldX * newZoom,
+        y: mid.y - worldY * newZoom
+      });
+    };
+
+    const onDown = (e) => {
+      if (e.pointerType !== 'touch') return;
+      // Only track touches that originate inside the board area
+      if (!el.contains(e.target)) return;
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      recomputePinch();
+    };
+    const onMove = (e) => {
+      if (e.pointerType !== 'touch') return;
+      if (!touchesRef.current.has(e.pointerId)) return;
+      touchesRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (isPinchingRef.current) recomputePinch();
+    };
+    const onUp = (e) => {
+      if (e.pointerType !== 'touch') return;
+      if (!touchesRef.current.has(e.pointerId)) return;
+      touchesRef.current.delete(e.pointerId);
+      recomputePinch();
+    };
+
+    window.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
   // ---------- Cork pointer-down → pan, or deselect ----------
   const onCorkPointerDown = useCallback((e) => {
     if (e.target !== boardRef.current) return;
     if (e.button !== undefined && e.button !== 0 && e.button !== 1) return;
+    if (pinchTaintedRef.current) return; // suppress single-finger pan during/after pinch
     panDragRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -103,6 +191,7 @@ export default function CorkBoard({
   const onPanMove = useCallback((e) => {
     const ds = panDragRef.current;
     if (!ds) return;
+    if (isPinchingRef.current || pinchTaintedRef.current) return;
     const dx = e.clientX - ds.startX;
     const dy = e.clientY - ds.startY;
     if (!ds.moved && Math.hypot(dx, dy) < PAN_THRESHOLD) return;
@@ -159,6 +248,7 @@ export default function CorkBoard({
   const onConnMove = useCallback((e) => {
     const d = draftRef.current;
     if (!d) return;
+    if (isPinchingRef.current || pinchTaintedRef.current) return;
     const world = screenToWorld(e.clientX, e.clientY);
     const target = noteAtWorld(world.x, world.y, d.fromNote.id);
     setDraft({ ...d, x: world.x, y: world.y, hoverNoteId: target?.id || null });
@@ -340,6 +430,8 @@ export default function CorkBoard({
                 trashRef={trashRef}
                 zoom={zoom}
                 pan={pan}
+                pinchTaintedRef={pinchTaintedRef}
+                isPinchingRef={isPinchingRef}
                 zIndex={noteOrder.get(note.id) || 1}
                 isReducedMotion={isReducedMotion}
                 onMove={(pos) => onUpdateNote(note.id, pos)}
