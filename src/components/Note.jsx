@@ -418,10 +418,10 @@ export default function Note({
 
 function ConnectionPoint({ side, note, onConnectionStart }) {
   const pos = {
-    top:    { top: -11, left: 'calc(50% - 11px)' },
-    right:  { right: -11, top: 'calc(50% - 11px)' },
-    bottom: { bottom: -11, left: 'calc(50% - 11px)' },
-    left:   { left: -11, top: 'calc(50% - 11px)' }
+    top:    { top: -9, left: 'calc(50% - 9px)' },
+    right:  { right: -9, top: 'calc(50% - 9px)' },
+    bottom: { bottom: -9, left: 'calc(50% - 9px)' },
+    left:   { left: -9, top: 'calc(50% - 9px)' }
   }[side];
   return (
     <button
@@ -436,12 +436,8 @@ function ConnectionPoint({ side, note, onConnectionStart }) {
         onConnectionStart?.(note.id, side, e);
       }}
       onClick={(e) => e.stopPropagation()}
-      className="absolute w-[22px] h-[22px] rounded-full bg-emerald-600 ring-[3px] ring-white shadow-lg opacity-90 hover:opacity-100 hover:scale-[1.15] focus:opacity-100 transition-all duration-150 focus-ring cursor-crosshair"
+      className="absolute w-[18px] h-[18px] rounded-full bg-emerald-700 ring-2 ring-white shadow-md opacity-50 hover:opacity-100 hover:scale-110 focus:opacity-100 transition-all duration-150 focus-ring cursor-crosshair"
       style={{ ...pos, touchAction: 'none', zIndex: 6 }}
-    >
-      <svg viewBox="0 0 10 10" className="w-2.5 h-2.5 mx-auto text-white" aria-hidden="true">
-        <circle cx="5" cy="5" r="2.2" fill="currentColor" />
-      </svg>
-    </button>
+    />
   );
 }
